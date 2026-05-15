@@ -1,0 +1,132 @@
+// Window: w_patient_register
+// Controls:
+//   dw_detail   - DataWindow control using dw_patient_detail
+//   dw_list     - DataWindow control using dw_patient_list
+//   sle_keyword - SingleLineEdit for search keyword
+//   cb_new      - CommandButton
+//   cb_search   - CommandButton
+//   cb_save     - CommandButton
+//   cb_delete   - CommandButton
+//   cb_close    - CommandButton
+
+// Event: open
+dw_detail.SetTransObject(SQLCA)
+dw_list.SetTransObject(SQLCA)
+
+this.of_new()
+this.of_search("")
+
+// Function: of_new returns integer
+long ll_row
+string ls_patient_no
+
+dw_detail.Reset()
+ll_row = dw_detail.InsertRow(0)
+dw_detail.SetRow(ll_row)
+
+ls_patient_no = "P" + String(Today(), "yyyymmdd") + String(Integer(Rand(9999)), "0000")
+
+dw_detail.SetItem(ll_row, "patient_no", ls_patient_no)
+dw_detail.SetItem(ll_row, "gender", "male")
+dw_detail.SetItem(ll_row, "created_at", DateTime(Today(), Now()))
+dw_detail.SetItem(ll_row, "updated_at", DateTime(Today(), Now()))
+
+return 1
+
+// Function: of_search(string as_keyword) returns integer
+dw_list.SetTransObject(SQLCA)
+dw_list.Retrieve(as_keyword)
+return dw_list.RowCount()
+
+// Function: of_validate() returns boolean
+long ll_row
+string ls_last_name
+string ls_first_name
+
+ll_row = dw_detail.GetRow()
+if ll_row <= 0 then
+    MessageBox("확인", "저장할 환자 정보가 없습니다.")
+    return false
+end if
+
+ls_last_name = Trim(String(dw_detail.GetItemString(ll_row, "last_name")))
+ls_first_name = Trim(String(dw_detail.GetItemString(ll_row, "first_name")))
+
+if ls_last_name = "" then
+    MessageBox("확인", "성을 입력해 주세요.")
+    dw_detail.SetColumn("last_name")
+    dw_detail.SetFocus()
+    return false
+end if
+
+if ls_first_name = "" then
+    MessageBox("확인", "이름을 입력해 주세요.")
+    dw_detail.SetColumn("first_name")
+    dw_detail.SetFocus()
+    return false
+end if
+
+return true
+
+// Event: cb_new.clicked
+this.of_new()
+
+// Event: cb_search.clicked
+this.of_search(sle_keyword.Text)
+
+// Event: cb_save.clicked
+long ll_row
+
+if not this.of_validate() then return
+
+ll_row = dw_detail.GetRow()
+dw_detail.SetItem(ll_row, "updated_at", DateTime(Today(), Now()))
+
+if dw_detail.Update() = 1 then
+    COMMIT USING SQLCA;
+    MessageBox("완료", "환자 정보가 저장되었습니다.")
+    this.of_search(sle_keyword.Text)
+else
+    ROLLBACK USING SQLCA;
+    MessageBox("오류", "저장 중 오류가 발생했습니다.~r~n" + SQLCA.SQLErrText)
+end if
+
+// Event: cb_delete.clicked
+long ll_row
+string ls_patient_no
+integer li_answer
+
+ll_row = dw_detail.GetRow()
+if ll_row <= 0 then return
+
+ls_patient_no = String(dw_detail.GetItemString(ll_row, "patient_no"))
+li_answer = MessageBox("삭제 확인", ls_patient_no + " 환자 정보를 삭제할까요?", Question!, YesNo!, 2)
+
+if li_answer <> 1 then return
+
+delete from patients
+ where patient_no = :ls_patient_no
+ using SQLCA;
+
+if SQLCA.SQLCode = 0 then
+    COMMIT USING SQLCA;
+    MessageBox("완료", "삭제되었습니다.")
+    this.of_new()
+    this.of_search(sle_keyword.Text)
+else
+    ROLLBACK USING SQLCA;
+    MessageBox("오류", "삭제 중 오류가 발생했습니다.~r~n" + SQLCA.SQLErrText)
+end if
+
+// Event: cb_close.clicked
+Close(Parent)
+
+// Event: dw_list.doubleclicked
+long ll_row
+string ls_patient_no
+
+ll_row = dw_list.GetRow()
+if ll_row <= 0 then return
+
+ls_patient_no = dw_list.GetItemString(ll_row, "patient_no")
+dw_detail.Retrieve(ls_patient_no)

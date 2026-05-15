@@ -1,0 +1,63 @@
+[환자 등록 시스템 저장 로직 설명서]
+
+이 문서는 'patient_page' 프로젝트의 환자 정보 저장 로직(Save Logic)이 어떻게 작동하는지 설명합니다.
+
+1. 저장 프로세스 흐름 (Flow)
+-----------------------------------
+사용자가 '저장' 버튼을 클릭하거나 폼을 제출(Submit)하면 다음과 같은 단계로 데이터가 처리됩니다:
+
+단계 1: 유효성 검사 (Validation)
+- 환자의 성(lastName), 이름(firstName), 생년월일(birthDate), 연락처(mobile)가 입력되었는지 확인합니다.
+- 필수 항목이 누락된 경우 사용자에게 경고 메시지를 보여주고 중단합니다.
+
+단계 2: 데이터 변환 (Data Mapping)
+- 화면의 입력 폼 데이터(`patientForm` 객체)를 데이터베이스 테이블 구조에 맞는 형식(`row` 객체)으로 변환합니다.
+- `formToRow()` 함수가 이 역할을 수행하며, 환자 번호가 없을 경우 새로 생성하고 나이 등을 계산하여 포함합니다.
+
+단계 3: Supabase API 호출 (API Request)
+- `supabaseFetch` 함수를 사용하여 Supabase REST API에 POST 요청을 보냅니다.
+- 이때 `on_conflict=patient_no` 쿼리 파라미터를 사용하여, 동일한 환자 번호가 있으면 업데이트(Update)하고, 없으면 삽입(Insert)하는 'Upsert' 방식을 사용합니다.
+- 헤더에는 `Prefer: resolution=merge-duplicates`를 포함하여 충돌 시 데이터를 병합하도록 설정합니다.
+
+단계 4: 결과 처리 (Response Handling)
+- 저장이 성공하면 서버로부터 반환된 최신 데이터를 다시 화면 폼(`patientForm`)에 반영합니다.
+- 하단 환자 목록을 새로고침하여 저장된 내용을 즉시 확인할 수 있게 합니다.
+- 오류 발생 시 에러 메시지를 화면에 출력합니다.
+
+2. 핵심 코드 요약 (JavaScript)
+-----------------------------------
+```javascript
+async function savePatient(event) {
+  event.preventDefault(); // 기본 제출 동작 방지
+
+  // 1. 필수값 체크
+  if (!patientForm.lastName || !patientForm.firstName || ...) {
+    render("필수 항목을 입력하세요.");
+    return;
+  }
+
+  try {
+    // 2. 데이터 변환
+    const row = formToRow(); 
+
+    // 3. Supabase API 호출 (Upsert 방식)
+    const result = await supabaseFetch(`${TABLE_NAME}?on_conflict=patient_no`, {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(row),
+    });
+
+    // 4. 화면 동기화 및 성공 알림
+    patientForm = rowToForm(result[0]);
+    await searchPatient(`저장 완료: ${result[0].patient_no}`);
+  } catch (error) {
+    render(`저장 실패: ${error.message}`);
+  }
+}
+```
+
+3. 주요 특징
+-----------------------------------
+- 무상태성: 서버에 세션을 유지하지 않고 매번 API 키를 통해 인증합니다.
+- 실시간성: 저장 즉시 검색 엔진을 다시 돌려 목록과 폼을 동기화합니다.
+- 안전성: `escapeHtml` 등을 통해 사용자 입력값에 의한 보안 사고를 방지합니다.
